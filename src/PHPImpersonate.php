@@ -82,14 +82,12 @@ class PHPImpersonate implements ClientInterface
             $result = $this->runCommand($command);
 
             $responseBody = $this->readTempFile($tempFiles['body']);
-            $responseHeaders = $this->parseHeaders(
-                $this->readTempFile($tempFiles['headers'])
-            );
+            $responseHeaders = $this->parseHeaders($this->readTempFile($tempFiles['headers']));
+            $responseHeadersMultiple = $this->parseHeaders($this->readTempFile($tempFiles['headers']), true);
 
             $statusCode = (int)$result['status_code'];
 
-            return new Response($responseBody, $statusCode, $responseHeaders);
-
+            return new Response($responseBody, $statusCode, $responseHeaders, $responseHeadersMultiple);
         } finally {
             $this->cleanupTempFiles($tempFiles);
             // Clean up additional temporary files (body data files)
@@ -804,7 +802,7 @@ class PHPImpersonate implements ClientInterface
 
         // Check if we have a valid HTTP status code
         $hasValidStatusCode = is_numeric($statusCode) &&
-                             ((int)$statusCode >= 100 && (int)$statusCode < 600);
+            ((int)$statusCode >= 100 && (int)$statusCode < 600);
 
         // Consider request successful if we have a valid HTTP status code
         if ($exitCode !== 0 && ! $hasValidStatusCode) {
@@ -829,7 +827,7 @@ class PHPImpersonate implements ClientInterface
     /**
      * Parse response headers with improved handling
      */
-    private function parseHeaders(string $headersContent): array
+    private function parseHeaders(string $headersContent, bool $parseMultipleHeaders = false): array
     {
         if (empty(trim($headersContent))) {
             return [];
@@ -857,13 +855,17 @@ class PHPImpersonate implements ClientInterface
             }
 
             // Parse header line
-            $colonPos = strpos($line, ':');
-            if ($colonPos !== false) {
-                $name = trim(substr($line, 0, $colonPos));
-                $value = trim(substr($line, $colonPos + 1));
+            if (str_contains($line, ':')) {
+                [$name, $value] = explode(':', $line, 2);
+                $name = trim($name);
+                $value = trim($value);
 
-                if (! empty($name)) {
-                    $headers[$name] = $value;
+                if (!empty($name)) {
+                    if ($parseMultipleHeaders) {
+                        $headers[$name][] = $value;
+                    } else {
+                        $headers[$name] = $value;
+                    }
                 }
             }
         }
