@@ -82,8 +82,9 @@ class PHPImpersonate implements ClientInterface
             $result = $this->runCommand($command);
 
             $responseBody = $this->readTempFile($tempFiles['body']);
-            $responseHeaders = $this->parseHeaders($this->readTempFile($tempFiles['headers']));
-            $responseHeadersMultiple = $this->parseHeaders($this->readTempFile($tempFiles['headers']), true);
+            $responseHeadersRaw = $this->readTempFile($tempFiles['headers']);
+            $responseHeaders = $this->parseHeaders($responseHeadersRaw);
+            $responseHeadersMultiple = $this->parseHeaders($responseHeadersRaw, true);
 
             $statusCode = (int)$result['status_code'];
 
