@@ -64,7 +64,7 @@ class PHPImpersonate implements ClientInterface
     {
         $this->validateRequest($request);
 
-        $tempFiles = $this->createTempFiles();
+        $tempFiles = $this->createTempFiles($request);
 
         try {
             $commandResult = $this->buildCommand(
@@ -72,6 +72,7 @@ class PHPImpersonate implements ClientInterface
                 $request->getUrl(),
                 $tempFiles['body'],
                 $tempFiles['headers'],
+                $tempFiles['config'],
                 $request->getHeaders(),
                 $request->getBody()
             );
@@ -385,14 +386,26 @@ class PHPImpersonate implements ClientInterface
     /**
      * Create temporary files for the request/response
      */
-    private function createTempFiles(): array
+    private function createTempFiles(Request $request): array
     {
         $bodyFile = $this->createTempFile('curl_impersonate_body');
         $headerFile = $this->createTempFile('curl_impersonate_headers');
+        $configFile = $this->createTempFile('curl_impersonate_config');
+
+        // Write config file with browser configuration
+        $configContent = '';
+        foreach ($request->getHeaders() as $key => $value) {
+            $safeHeader = str_replace('"', '\"', "$key: $value");
+            $configContent .= "header = \"$safeHeader\"\n";
+        }
+        if (file_put_contents($configFile, $configContent) === false) {
+            throw new RequestException('Failed to write configuration to temporary file');
+        }
 
         $files = [
             'body' => $bodyFile,
             'headers' => $headerFile,
+            'config' => $configFile,
         ];
 
         // Track temp files for cleanup
@@ -483,13 +496,14 @@ class PHPImpersonate implements ClientInterface
         string $url,
         string $outputFile,
         string $headerFile,
+        string $configFile,
         array $headers = [],
         ?string $body = null
     ): array {
         $browserCmd = $this->browser->getExecutablePath();
         $browserConfig = $this->browser->getConfig();
 
-        $options = $this->buildCurlOptions($method, $outputFile, $headerFile, $headers);
+        $options = $this->buildCurlOptions($method, $outputFile, $headerFile, $configFile);
         $additionalTempFiles = [];
 
         if ($body !== null) {
@@ -523,7 +537,7 @@ class PHPImpersonate implements ClientInterface
         string $method,
         string $outputFile,
         string $headerFile,
-        array $headers
+        string $configFile,
     ): array {
         $options = [
             's' => true, // silent mode
@@ -533,17 +547,11 @@ class PHPImpersonate implements ClientInterface
             'o' => $outputFile, // output file
             'D' => $headerFile, // dump headers file
             'X' => $method, // HTTP method
+            'K' => $configFile, // config file (request headers)
         ];
 
         // Handle SSL CA certificates based on platform
         $this->addSslCertOptions($options);
-
-        // Add headers
-        if (! empty($headers)) {
-            foreach ($headers as $name => $value) {
-                $options['H'][] = "$name: $value";
-            }
-        }
 
         return $options;
     }
